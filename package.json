@@ -1,0 +1,17 @@
+{
+  "name": "multichain-desktop-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solidity contracts reconstructed from the desktop swap clients",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/compile.cjs",
+    "test": "node --test test/*.test.cjs",
+    "check:client": "node scripts/check-client-abi.cjs"
+  },
+  "devDependencies": {
+    "ethers": "6.17.0",
+    "ganache": "7.9.2",
+    "solc": "0.8.36"
+  }
+}
