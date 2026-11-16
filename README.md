@@ -9,7 +9,7 @@
 | V4SwapExecutor | Uniswap V4、PancakeSwap Infinity CL/Bin 直连交易 |
 | V4QuoteHelper | 保存无 Hook 的候选池及锁定池，生成报价和 Universal Router 参数 |
 
-执行器提供 ERC-20 与原生币资金管理、所有者操作、授权触发钱包、时限和单轮执行。更新设置或撤销授权会使旧的触发 epoch 失效。交易使用链上保存的最低购买量或报价滑点，并以余额变化核算实际买入、试卖和收款。税费模拟通过回滚返回报告。
+执行器提供 ERC-20 与原生币资金管理、所有者操作、授权触发钱包、时限和单轮执行。更新设置或撤销授权会使旧的触发 epoch 失效。手动买入使用链上最低购买量或报价滑点。0.2.0 自动触发要求固定的正数投入金额和最低实收，并在兑换、试卖和转账后按收款地址的余额增量核算实收。低于下限时整笔交易回滚。税费模拟通过回滚返回报告。
 
 ## 构建与验证
 
@@ -22,7 +22,7 @@ npm run check:client
 npm test
 ```
 
-构建使用 Solidity 0.8.36。`artifacts/` 包含重写版本的 ABI、字节码、不可变引用和内嵌源码的编译元数据。`test/fixtures/desktop-abi.json` 保存用于兼容检查的桌面端 ABI。
+构建使用 Solidity 0.8.38。`artifacts/` 包含重写版本的 ABI、字节码、不可变引用和内嵌源码的编译元数据。`test/fixtures/desktop-abi.json` 保存用于兼容检查的桌面端 ABI。
 
 协议路由和资金操作在本地 Ganache 与模拟协议合约中验证。链上依赖按恢复的桌面客户端配置。真实池、网络状态和成交行为待独立验证。路由接口参考 [Uniswap V4](https://developers.uniswap.org/docs/sdks/v4/guides/swapping/single-hop-swapping)、[PancakeSwap Infinity](https://developer.pancakeswap.finance/contracts/universal-router/addresses)、[Aerodrome Router](https://github.com/aerodrome-finance/contracts/blob/main/contracts/interfaces/IRouter.sol) 和 [Slipstream](https://github.com/aerodrome-finance/slipstream/tree/main/contracts/periphery/interfaces)。
 

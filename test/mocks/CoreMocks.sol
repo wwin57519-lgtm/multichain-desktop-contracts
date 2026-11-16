@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.36;
+pragma solidity 0.8.38;
 
 import {TradeCore} from "../../contracts/common/TradeCore.sol";
 import {IWETH, TokenOps} from "../../contracts/common/TokenOps.sol";
@@ -117,7 +117,7 @@ contract CoreMockExecutor is TradeCore {
 
     function sampleTaxReport(uint256 amount) external onlyOwner nonReentrant {
         uint256 quote = router.quote(amount);
-        (uint256 bought, uint256 received,) = _executeTrade(amount, 1, block.timestamp, 0, false);
+        (uint256 bought, uint256 received,) = _executeTrade(amount, 1, block.timestamp);
         _report(
             TaxExecutionResult({
                 amountIn: amount,
@@ -144,13 +144,13 @@ contract CoreMockExecutor is TradeCore {
         return _minimum;
     }
 
-    function _executeTrade(uint256 amount, uint256 requestedMinimum, uint256, uint16 autoSlippageBps, bool automatic)
+    function _executeTrade(uint256 amount, uint256 requestedMinimum, uint256)
         internal
         override
         returns (uint256 bought, uint256 received, uint256 testInputRecovered)
     {
         uint256 expected = router.quote(amount);
-        uint256 minimum = _executionMinimum(expected, requestedMinimum, autoSlippageBps, automatic);
+        uint256 minimum = _executionMinimum(requestedMinimum);
         uint256 inputBefore = TokenOps.balanceOf(_input, address(this));
         uint256 outputBefore = TokenOps.balanceOf(_output, address(this));
         uint256 recipientBefore = TokenOps.balanceOf(_output, _recipient);

@@ -260,3 +260,37 @@ test("native input uses exact value without router dust and native output is rew
     assert.equal(await ctx.provider.getBalance(ctx.executorAddress), 0n);
     await assertApprovalsCleared(ctx, BASE_ENDPOINTS[4], BASE_ENDPOINTS[1], ctx.uniPermit2, ctx.output);
 });
+
+test("automatic execution enforces the full net floor after a sell probe and token fees", async (t) => {
+    const ctx = await fixture(t, "V4MockRecipientFeeAsset");
+    const [input, output, triggerWallet] = await Promise.all([
+        ctx.input.getAddress(), ctx.output.getAddress(), ctx.other.getAddress()
+    ]);
+    const chosen = pool(10, input, output);
+    await mine(ctx.input.mint(ctx.executorAddress, 100));
+    await mine(ctx.output.mint(BASE_ENDPOINTS[1], 1000));
+    await mine(ctx.output.setRecipientFee(ctx.recipient, 2500));
+    await mine(ctx.executor.setSettingsAndV4(
+        settings(ctx, input, output, { priceMode: 1, minBuyAmount: 130n, testSell: true, testSellBps: 2500 }),
+        100, 0, [chosen], chosen.poolId
+    ));
+    await mine(ctx.executor.setTriggerWallets([triggerWallet], true));
+    await mine(ctx.executor.armTrigger(100n, 10_000, 0, await deadline(ctx)));
+    const epoch = await ctx.executor.triggerEpoch();
+    const caller = ctx.executor.connect(ctx.other);
+    const failure = await expectError(() => caller.trigger.staticCall(epoch), ctx.executor, "MinimumNotMet");
+    assert.deepEqual(Array.from(failure), [113n, 130n]);
+    await assert.rejects(async () => mine(caller.trigger(epoch, { gasLimit: 3_000_000 })),
+        (error) => error.receipt?.status === 0);
+    assert.equal(await ctx.executor.triggerArmed(), true);
+    assert.equal(await ctx.executor.triggerEpoch(), epoch);
+    assert.equal(await ctx.input.balanceOf(ctx.executorAddress), 100n);
+    assert.equal(await ctx.output.balanceOf(ctx.recipient), 0n);
+    await assertApprovalsCleared(ctx, BASE_ENDPOINTS[4], BASE_ENDPOINTS[1], ctx.uniPermit2, ctx.input);
+    await assertApprovalsCleared(ctx, BASE_ENDPOINTS[4], BASE_ENDPOINTS[1], ctx.uniPermit2, ctx.output);
+
+    await mine(ctx.output.setRecipientFee(ctx.recipient, 0));
+    await mine(caller.trigger(epoch));
+    assert.equal(await ctx.output.balanceOf(ctx.recipient), 150n);
+    assert.equal(await ctx.executor.executed(), true);
+});

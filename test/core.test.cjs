@@ -80,7 +80,7 @@ async function expectFailedTransaction(transaction) {
     });
 }
 
-async function save(ctx, minimum = 0n) {
+async function save(ctx, minimum = 1n) {
     const [input, output] = await Promise.all([ctx.input.getAddress(), ctx.output.getAddress()]);
     await mine(ctx.executor.save(input, output, ctx.recipient, minimum, 750));
 }
@@ -94,7 +94,7 @@ async function authorize(ctx, allowed = true) {
     await mine(ctx.executor.setTriggerWallets([await ctx.watcher.getAddress()], allowed));
 }
 
-async function arm(ctx, amount = 20n, slippage = 500, wait = 0) {
+async function arm(ctx, amount = 20n, slippage = 10_000, wait = 0) {
     const now = await latestTime(ctx.chain);
     const notBefore = wait ? now + BigInt(wait) : 0n;
     const expiresAt = now + 600n;
@@ -160,10 +160,10 @@ test("a permitted wallet can trigger only once and only within the armed time wi
     await fund(ctx);
     await authorize(ctx);
 
-    const epoch = await arm(ctx, 20n, 500, 120);
+    const epoch = await arm(ctx, 20n, 10_000, 120);
     const policy = await executor.getTriggerPolicy();
     assert.equal(policy.amountIn, 20n);
-    assert.equal(policy.slippageBps, 500n);
+    assert.equal(policy.slippageBps, 10_000n);
     assert.ok(policy.notBefore > await latestTime(ctx.chain));
     assert.ok(policy.expiresAt > policy.notBefore);
     await expectRevert(() => executor.connect(watcher).trigger.staticCall(epoch), executor, "TriggerTooEarly");
@@ -181,7 +181,7 @@ test("a permitted wallet can trigger only once and only within the armed time wi
     assert.equal(await executor.executed(), true);
     await expectRevert(() => executor.connect(watcher).trigger.staticCall(epoch), executor, "AlreadyExecuted");
     await expectRevert(
-        () => executor.armTrigger.staticCall(20, 500, 0, policy.expiresAt), executor, "AlreadyExecuted"
+        () => executor.armTrigger.staticCall(20, 10_000, 0, policy.expiresAt), executor, "AlreadyExecuted"
     );
 
     await save(ctx);
@@ -190,15 +190,15 @@ test("a permitted wallet can trigger only once and only within the armed time wi
     await expectRevert(() => executor.connect(watcher).trigger.staticCall(expiringEpoch), executor, "Expired");
 });
 
-test("slippage failure rolls back transfers and leaves the same authorized round retryable", async (t) => {
+test("minimum failure rolls back transfers and leaves the same authorized round retryable", async (t) => {
     const ctx = await fixture(t);
     const { executor, watcher, router } = ctx;
-    await save(ctx);
+    await save(ctx, 29n);
     await fund(ctx);
     await authorize(ctx);
     await mine(router.setRates(3, 2));
 
-    const epoch = await arm(ctx, 10n, 100);
+    const epoch = await arm(ctx, 10n);
     const balances = await tradeBalances(ctx);
     const caller = executor.connect(watcher);
     const failure = await expectRevert(() => caller.trigger.staticCall(epoch), executor, "MinimumNotMet");
@@ -259,7 +259,7 @@ test("policy changes, authorization changes and withdrawals invalidate the old e
     ];
 
     for (const change of changes) {
-        const epoch = await arm(ctx, 0n);
+        const epoch = await arm(ctx);
         await change();
         const next = await executor.triggerEpoch();
         assert.ok(next > epoch);
@@ -269,16 +269,33 @@ test("policy changes, authorization changes and withdrawals invalidate the old e
         await expectRevert(() => caller.trigger.staticCall(next), executor, "TriggerNotArmed");
     }
 
-    const revokedEpoch = await arm(ctx, 0n);
+    const revokedEpoch = await arm(ctx);
     await authorize(ctx, false);
     assert.equal(await executor.isTriggerWallet(await watcher.getAddress()), false);
     await expectRevert(() => caller.trigger.staticCall(revokedEpoch), executor, "NotTriggerWallet");
 
     await authorize(ctx);
-    const fullBalanceEpoch = await arm(ctx, 0n);
-    await mine(caller.trigger(fullBalanceEpoch));
-    assert.equal(await input.balanceOf(ctx.executorAddress), 0n);
-    assert.equal(await ctx.output.balanceOf(recipient), 297n);
+    const fixedAmountEpoch = await arm(ctx);
+    await mine(caller.trigger(fixedAmountEpoch));
+    assert.equal(await input.balanceOf(ctx.executorAddress), 79n);
+    assert.equal(await ctx.output.balanceOf(recipient), 60n);
+});
+
+test("automatic execution requires a nonzero amount and an absolute recipient floor", async (t) => {
+    const ctx = await fixture(t);
+    const { executor } = ctx;
+    const expiry = await latestTime(ctx.chain) + 600n;
+    await save(ctx, 0n);
+    await expectRevert(
+        () => executor.armTrigger.staticCall(10n, 10_000, 0, expiry), executor, "InvalidTriggerPolicy"
+    );
+    await save(ctx, 25n);
+    const epoch = await executor.triggerEpoch();
+    await expectRevert(
+        () => executor.armTrigger.staticCall(0n, 10_000, 0, expiry), executor, "InvalidTriggerPolicy"
+    );
+    assert.equal(await executor.triggerEpoch(), epoch);
+    assert.equal(await executor.triggerArmed(), false);
 });
 
 test("native deposits wrap value and a failed recovery leaves both balances intact", async (t) => {
@@ -340,7 +357,7 @@ test("explicit ERC-20 withdrawals still work when the token cannot report a bala
 test("the shared tax report encodes observed output and a reverted attempt moves no funds", async (t) => {
     const ctx = await fixture(t);
     const { executor, outsider, routerAddress } = ctx;
-    await save(ctx);
+    await save(ctx, 0n);
     await fund(ctx);
     const before = await tradeBalances(ctx);
 
